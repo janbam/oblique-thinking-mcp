@@ -4,7 +4,7 @@
 """
 MCP Server implementing the 'Oblique Strategies' tool using stdio transport.
 
-This server provides a tool called 'start_oblique_thinking' that returns
+This server provides a tool called 'ObliqueStrategies' that returns
 a randomly selected thinking strategy card and a thinking process text.
 The output format can be controlled via command-line arguments.
 """
@@ -12,9 +12,25 @@ The output format can be controlled via command-line arguments.
 import sys
 import random
 import argparse
+import json
 import logging
-from mcp.server import Server
-from mcp.transport.stdio import StdioTransport
+from collections.abc import Sequence
+
+import anyio
+from mcp.server import InitializationOptions, Server, ServerRequestContext
+from mcp.server.stdio import stdio_server
+from mcp_types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ListPromptsResult,
+    ListResourcesResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    ServerCapabilities,
+    TextContent,
+    Tool,
+    ToolsCapability,
+)
 
 # --- Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -211,97 +227,149 @@ Use this tool when a dilemma occurs in a working situation. The function is trus
 """
 
 # --- Command Line Argument Parsing ---
-parser = argparse.ArgumentParser(description="MCP Oblique Strategies Server")
-parser.add_argument(
-    'mode',
-    nargs='?', # Makes the argument optional
-    choices=['1', '2'], # Allowed values if provided
-    default='0', # Default value if no argument is given
-    help="Output mode: '1' omits thinking text, '2' omits card."
-)
-args = parser.parse_args()
-OUTPUT_MODE = args.mode # Will be '0', '1', or '2'
 
-# --- MCP Handlers ---
 
-async def start_oblique_thinking_handler(request):
+def parse_output_mode(argv: Sequence[str] | None = None) -> str:
+    """Parse the optional output mode without consuming arguments during import."""
+    parser = argparse.ArgumentParser(description="MCP Oblique Strategies Server")
+    parser.add_argument(
+        'mode',
+        nargs='?',
+        choices=['1', '2'],
+        help="Output mode: '1' omits thinking text, '2' omits card.",
+    )
+    return parser.parse_args(argv).mode or '0'
+
+
+# Imports use the default mode; direct execution replaces it with parsed CLI input.
+OUTPUT_MODE = '0'
+
+# --- Tool Implementation ---
+
+
+def ObliqueStrategies() -> dict[str, str]:
     """
-    Handles the 'start_oblique_thinking' tool request.
+    Return an Oblique Strategy using this variant's established result envelope.
 
     Selects a random card and thinking text based on the mode
     set by command-line arguments and returns the formatted string.
     """
-    logging.info(f"Handling start_oblique_thinking request (mode: {OUTPUT_MODE})")
+    logging.info(f"Handling ObliqueStrategies request (mode: {OUTPUT_MODE})")
 
+    # Select both ingredients before applying the caller-selected presentation mode.
     thinking_text = random.choice(THINKING_TEXTS) if THINKING_TEXTS else "Thinking..."
     card = random.choice(CARDS) if CARDS else "No card available."
 
-    # Construct the result based on the output mode
-    if OUTPUT_MODE == '0': # Default: include both
+    # Preserve this legacy variant's three output contracts during the SDK migration.
+    if OUTPUT_MODE == '0':  # Default: include both
         result = f"Now {thinking_text}\n<thinking>\n{card}"
-    elif OUTPUT_MODE == '1': # Mode 1: omit thinking text
+    elif OUTPUT_MODE == '1':  # Mode 1: omit thinking text
         result = f"\n<thinking>\n{card}"
-    elif OUTPUT_MODE == '2': # Mode 2: omit card
+    elif OUTPUT_MODE == '2':  # Mode 2: omit card
         result = f"Now {thinking_text}\n<thinking>\n"
-    else: # Should not happen with argparse choices, but good to have a fallback
+    else:  # Should not happen with argparse choices, but good to have a fallback
         logging.warning(f"Invalid output mode '{OUTPUT_MODE}', defaulting to full output.")
         result = f"Now {thinking_text}\n<thinking>\n{card}"
 
-    logging.info(f"Generated result: {result[:100]}...") # Log snippet of result
+    logging.info(f"Generated result: {result[:100]}...")  # Log snippet of result
     return {"result": result}
 
-async def list_prompts_handler(request):
-    """
-    Handles the 'list_prompts' request. Returns an empty list for compatibility.
-    """
-    logging.info("Handling list_prompts request (returning empty list)")
-    return {"prompts": []}
 
-async def list_resources_handler(request):
-    """
-    Handles the 'list_resources' request. Returns an empty list for compatibility.
-    """
-    logging.info("Handling list_resources request (returning empty list)")
-    return {"resources": []}
+# --- MCP Handlers ---
+
+
+async def list_tools(
+    ctx: ServerRequestContext,
+    params: PaginatedRequestParams | None,
+) -> ListToolsResult:
+    """Advertise the single argument-free Oblique Strategies tool."""
+    return ListToolsResult(
+        tools=[
+            Tool(
+                name="ObliqueStrategies",
+                title="Oblique Strategies",
+                description=TOOL_DESCRIPTION,
+                input_schema={"type": "object", "properties": {}},
+                output_schema={
+                    "type": "object",
+                    "properties": {"result": {"type": "string"}},
+                    "required": ["result"],
+                },
+            )
+        ]
+    )
+
+
+async def call_tool(
+    ctx: ServerRequestContext,
+    params: CallToolRequestParams,
+) -> CallToolResult:
+    """Invoke `ObliqueStrategies` and preserve the legacy result envelope."""
+    if params.name != "ObliqueStrategies":
+        raise ValueError(f"Unknown tool: {params.name}")
+
+    # Build both protocol representations from the same result to keep them coherent.
+    structured_result = ObliqueStrategies()
+    return CallToolResult(
+        content=[TextContent(type="text", text=json.dumps(structured_result))],
+        structured_content=structured_result,
+        is_error=False,
+    )
+
+
+async def list_prompts(
+    ctx: ServerRequestContext,
+    params: PaginatedRequestParams | None,
+) -> ListPromptsResult:
+    """Return the compatibility response for undeclared prompt support."""
+    return ListPromptsResult(prompts=[])
+
+
+async def list_resources(
+    ctx: ServerRequestContext,
+    params: PaginatedRequestParams | None,
+) -> ListResourcesResult:
+    """Return the compatibility response for undeclared resource support."""
+    return ListResourcesResult(resources=[])
+
 
 # --- Server Setup ---
+
+
+# Register compatibility handlers while keeping their capabilities out of initialization.
+mcp = Server(
+    "MCP Oblique Strategies Server (legacy output)",
+    version="0.1.0",
+    on_list_tools=list_tools,
+    on_call_tool=call_tool,
+    on_list_prompts=list_prompts,
+    on_list_resources=list_resources,
+)
+INITIALIZATION_OPTIONS = InitializationOptions(
+    server_name="MCP Oblique Strategies Server (legacy output)",
+    server_version="0.1.0",
+    capabilities=ServerCapabilities(tools=ToolsCapability(list_changed=False)),
+)
+
+
+async def run_server() -> None:
+    """Serve the low-level MCP implementation over stdio."""
+    # Supply the explicit tool-only capability set instead of deriving it from handlers.
+    async with stdio_server() as (read_stream, write_stream):
+        await mcp.run(read_stream, write_stream, INITIALIZATION_OPTIONS)
+
 
 def main():
     """
     Sets up and runs the MCP server.
     """
-    logging.info("Initializing MCP server...")
+    global OUTPUT_MODE
 
-    # Create the server instance
-    server = Server()
+    # Bind CLI policy only at direct-execution time so imports remain testable.
+    OUTPUT_MODE = parse_output_mode(sys.argv[1:])
+    logging.info("Starting MCP server loop in mode %s...", OUTPUT_MODE)
+    anyio.run(run_server)
 
-    # Register the tool
-    server.register_tool(
-        name="start_oblique_thinking",
-        title="Oblique Strategies",
-        description=TOOL_DESCRIPTION,
-        handler=start_oblique_thinking_handler,
-        # No arguments needed for this tool
-    )
-    logging.info("Registered tool: start_oblique_thinking")
-
-    # Register compatibility handlers
-    server.register_handler("list_prompts", list_prompts_handler)
-    server.register_handler("list_resources", list_resources_handler)
-    logging.info("Registered compatibility handlers: list_prompts, list_resources")
-
-    # Define server capabilities (only 'tool' as requested)
-    server.capabilities = ['tool']
-    logging.info(f"Server capabilities set to: {server.capabilities}")
-
-    # Create the stdio transport
-    transport = StdioTransport(server)
-    logging.info("Using StdioTransport")
-
-    # Run the server
-    logging.info("Starting MCP server loop...")
-    transport.run()
-    logging.info("MCP server stopped.")
 
 if __name__ == "__main__":
     main()
