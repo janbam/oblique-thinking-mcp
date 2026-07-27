@@ -1,7 +1,7 @@
 As an expert senior software developer, your task is to implement a MCP (Model Context Protocol) in Python.
 The server must use the low-level mcp.server.Server with the stdio transport
 
-The server exposes a tool called start_oblique_thinking
+The server exposes a tool called ObliqueStrategies
 the tool has no arguments
 It simply return this result text:
 """Now {thinking_text}

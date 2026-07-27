@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 
 """
-MCP Server implementing the 'Oblique Strategies' tool using FastMCP.
+MCP Server implementing the 'Oblique Strategies' tool using MCPServer.
 
-This server provides a tool called 'start_oblique_thinking' that returns
+This server provides a tool called 'ObliqueStrategies' that returns
 a randomly selected thinking strategy card and a thinking process text.
 The output format can be controlled via command-line arguments.
 """
@@ -12,7 +12,7 @@ The output format can be controlled via command-line arguments.
 import random
 import sys
 import logging
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 # --- Configuration ---
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -206,23 +206,30 @@ THINKING_TEXTS = [text.strip() for text in THINKING_TEXTS if text.strip()]
 OUTPUT_MODE = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in ['1', '2'] else '0'
 
 # --- MCP Server Setup ---
-mcp = FastMCP("MCP Oblique Strategies Server")
+# Report the application's identity instead of inheriting the SDK's version.
+mcp = MCPServer("MCP Oblique Strategies Server", version="0.1.0")
+
 
 @mcp.tool()
-def start_oblique_thinking() -> str:
+def ObliqueStrategies() -> str:
     """
     Use this tool for inspired thinking.
     These thinking strategies evolved from our separate observations on the principles underlying what we were doing. Sometimes they were recognized in retrospect (intellect catching up with intuition), sometimes they were identified as they were happening, sometimes they were formulated.
 
     The tool is to be trusted even if its appropriateness is quite unclear. Results are not final, as new ideas will present themselves, and others will become self-evident.
     """
-    logging.debug(f"Handling start_oblique_thinking request (mode: {OUTPUT_MODE})")
+    logging.debug(f"Handling ObliqueStrategies request (mode: {OUTPUT_MODE})")
 
+    # Select both ingredients before applying the caller-selected presentation mode.
     thinking_text = random.choice(THINKING_TEXTS) if THINKING_TEXTS else "Thinking..."
     card = random.choice(CARDS) if CARDS else "No card available."
 
-    prefix = f"To initiate the inspired thinking process open a thinking tag with exactly these words followed by your thinking until the tag closes:\n"
+    prefix = (
+        "To initiate the inspired thinking process open a thinking tag with exactly "
+        "these words followed by your thinking until the tag closes:\n"
+    )
 
+    # Preserve the three established output contracts exactly across the SDK migration.
     if OUTPUT_MODE == '0':  # Default: include both
         result = prefix + f"<thinking>\n*{thinking_text}*—{card}"
     elif OUTPUT_MODE == '1':  # Mode 1: omit thinking text
@@ -235,6 +242,7 @@ def start_oblique_thinking() -> str:
 
     logging.info(f"Generated result: {result}")
     return result
+
 
 # --- Run the Server ---
 if __name__ == "__main__":
