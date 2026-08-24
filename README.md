@@ -11,7 +11,7 @@ Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
 git clone https://github.com/janbam/oblique-thinking-mcp.git && cd oblique-thinking-mcp && uv sync --frozen
 ```
 
-The project currently pins `mcp[cli]==2.0.0rc1`.
+The project currently pins `mcp[cli]==2.0.0`.
 
 ## Run
 

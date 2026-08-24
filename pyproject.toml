@@ -5,5 +5,5 @@ description = "An MCP server for randomized Oblique Strategies prompts"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mcp[cli]==2.0.0rc1",
+    "mcp[cli]==2.0.0",
 ]
